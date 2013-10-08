@@ -97,6 +97,13 @@ int git_smart__detect_caps(git_pkt_ref *pkt, transport_smart_caps *caps)
 			continue;
 		}
 
+		/* Keep multi_ack_detailed before multi_ack */
+		if (!git__prefixcmp(ptr, GIT_CAP_MULTI_ACK_DETAILED)) {
+			caps->common = caps->multi_ack_detailed = 1;
+			ptr += strlen(GIT_CAP_MULTI_ACK_DETAILED);
+			continue;
+		}
+
 		if (!git__prefixcmp(ptr, GIT_CAP_MULTI_ACK)) {
 			caps->common = caps->multi_ack = 1;
 			ptr += strlen(GIT_CAP_MULTI_ACK);
@@ -281,7 +288,7 @@ int git_smart__negotiate_fetch(git_transport *transport, git_repository *repo, c
 				goto on_error;
 
 			git_buf_clear(&data);
-			if (t->caps.multi_ack) {
+			if (t->caps.multi_ack || t->caps.multi_ack_detailed) {
 				if ((error = store_common(t)) < 0)
 					goto on_error;
 			} else {
@@ -359,7 +366,7 @@ int git_smart__negotiate_fetch(git_transport *transport, git_repository *repo, c
 	git_revwalk_free(walk);
 
 	/* Now let's eat up whatever the server gives us */
-	if (!t->caps.multi_ack) {
+	if (!t->caps.multi_ack && !t->caps.multi_ack_detailed) {
 		pkt_type = recv_pkt(NULL, buf);
 
 		if (pkt_type < 0) {
@@ -375,7 +382,9 @@ int git_smart__negotiate_fetch(git_transport *transport, git_repository *repo, c
 				return error;
 
 			if (pkt->type == GIT_PKT_NAK ||
-				(pkt->type == GIT_PKT_ACK && pkt->status != GIT_ACK_CONTINUE)) {
+			    (pkt->type == GIT_PKT_ACK &&
+			     (pkt->status != GIT_ACK_CONTINUE ||
+			      pkt->status != GIT_ACK_COMMON))) {
 				git__free(pkt);
 				break;
 			}
