@@ -349,7 +349,7 @@ static bool should_checkout(
 int git_clone_into(git_repository *repo, git_remote *remote, const git_checkout_opts *co_opts, const char *branch)
 {
 	int error = 0, old_fetchhead;
-	size_t nspecs;
+	git_strarray refspecs;
 
 	assert(repo && remote);
 
@@ -358,7 +358,16 @@ int git_clone_into(git_repository *repo, git_remote *remote, const git_checkout_
 		return -1;
 	}
 
-	if ((error = git_remote_add_fetch(remote, "refs/tags/*:refs/tags/*")) < 0)
+
+	if ((error = git_remote_get_fetch_refspecs(&refspecs, remote)) < 0)
+		return error;
+
+	refspecs.strings = git__realloc(refspecs.strings, sizeof(char *) * (refspecs.count + 1));
+	GITERR_CHECK_ALLOC(refspecs.strings);
+
+	refspecs.strings[refspecs.count++] = "refs/tags/*:refs/tags/*";
+
+	if ((error = git_remote_set_fetch_refspecs(remote, &refspecs)) < 0)
 		return error;
 
 	old_fetchhead = git_remote_update_fetchhead(remote);
@@ -379,8 +388,13 @@ int git_clone_into(git_repository *repo, git_remote *remote, const git_checkout_
 cleanup:
 	git_remote_set_update_fetchhead(remote, old_fetchhead);
 	/* Remove the tags refspec */
-	nspecs = git_remote_refspec_count(remote);
-	git_remote_remove_refspec(remote, nspecs);
+	refspecs.count--;
+	if (git_remote_set_fetch_refspecs(remote, &refspecs) < 0) {
+		git_strarray_free(&refspecs);
+		return -1;
+	}
+
+	git_strarray_free(&refspecs);
 
 	return error;
 }
